@@ -322,3 +322,354 @@ if __name__ == '__main__':
     os.makedirs('templates', exist_ok=True)
     
     app.run(debug=True)
+
+<!-- base.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AgriMarket{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .quality-badge {
+            font-size: 0.8em;
+            padding: 0.25rem 0.5rem;
+        }
+        .grade-premium { background-color: #28a745; }
+        .grade-a { background-color: #17a2b8; }
+        .grade-b { background-color: #ffc107; color: #000; }
+        .grade-c { background-color: #dc3545; }
+        .produce-card img { height: 200px; object-fit: cover; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-success">
+        <div class="container">
+            <a class="navbar-brand" href="/"><i class="fas fa-leaf"></i> AgriMarket</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/">Home</a>
+                <a class="nav-link" href="/browse">Browse</a>
+                {% if session.user_id %}
+                    <a class="nav-link" href="/dashboard">Dashboard</a>
+                    <a class="nav-link" href="/transactions">Transactions</a>
+                    <a class="nav-link" href="/logout">Logout</a>
+                {% else %}
+                    <a class="nav-link" href="/login">Login</a>
+                    <a class="nav-link" href="/register">Register</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mt-4">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
+
+<!-- home.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8">
+        <h1>Welcome to AgriMarket</h1>
+        <p class="lead">Connect farmers with buyers through our digital marketplace featuring AI-powered quality grading and secure bidding.</p>
+        <div class="d-flex gap-2">
+            <a href="/register" class="btn btn-success">Join as Farmer</a>
+            <a href="/register" class="btn btn-outline-success">Join as Buyer</a>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <img src="https://via.placeholder.com/300x200/28a745/ffffff?text=Fresh+Produce" class="img-fluid rounded">
+    </div>
+</div>
+
+<h2>Recent Listings</h2>
+<div class="row">
+    {% for produce in recent_produce %}
+    <div class="col-md-4 mb-3">
+        <div class="card produce-card">
+            {% if produce.image_path %}
+                <img src="/static/uploads/{{ produce.image_path }}" class="card-img-top">
+            {% else %}
+                <img src="https://via.placeholder.com/300x200/28a745/ffffff?text={{ produce.category }}" class="card-img-top">
+            {% endif %}
+            <div class="card-body">
+                <h5 class="card-title">{{ produce.title }}</h5>
+                <p class="card-text">{{ produce.description[:100] }}...</p>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="badge quality-badge grade-{{ produce.quality_grade.lower() }}">
+                        Grade {{ produce.quality_grade }}
+                    </span>
+                    <span class="text-success fw-bold">${{ produce.base_price }}/{{ produce.unit }}</span>
+                </div>
+                <a href="/produce/{{ produce.id }}" class="btn btn-sm btn-outline-success mt-2">View Details</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+
+<!-- register.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h3>Register</h3>
+            </div>
+            <div class="card-body">
+                <form id="registerForm">
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-control" name="email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-control" name="password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">User Type</label>
+                        <select class="form-control" name="user_type" required>
+                            <option value="">Select Type</option>
+                            <option value="farmer">Farmer</option>
+                            <option value="buyer">Buyer</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Phone</label>
+                        <input type="tel" class="form-control" name="phone">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Address</label>
+                        <textarea class="form-control" name="address" rows="3"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-success">Register</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('registerForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const data = Object.fromEntries(formData.entries());
+    
+    try {
+        const response = await fetch('/register', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            alert('Registration successful!');
+            window.location.href = '/login';
+        } else {
+            const error = await response.json();
+            alert(error.error);
+        }
+    } catch (err) {
+        alert('Registration failed');
+    }
+});
+</script>
+{% endblock %}
+
+<!-- browse.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Browse Produce</h2>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <form method="GET" class="d-flex gap-2">
+            <select name="category" class="form-control">
+                <option value="">All Categories</option>
+                {% for cat in categories %}
+                    <option value="{{ cat[0] }}">{{ cat[0] }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="location" class="form-control" placeholder="Location" value="{{ request.args.get('location', '') }}">
+            <select name="quality" class="form-control">
+                <option value="">All Grades</option>
+                {% for quality in qualities %}
+                    <option value="{{ quality[0] }}">Grade {{ quality[0] }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-success">Filter</button>
+        </form>
+    </div>
+</div>
+
+<div class="row">
+    {% for produce in produce_list %}
+    <div class="col-md-4 mb-3">
+        <div class="card produce-card">
+            {% if produce.image_path %}
+                <img src="/static/uploads/{{ produce.image_path }}" class="card-img-top">
+            {% else %}
+                <img src="https://via.placeholder.com/300x200/28a745/ffffff?text={{ produce.category }}" class="card-img-top">
+            {% endif %}
+            <div class="card-body">
+                <h5 class="card-title">{{ produce.title }}</h5>
+                <p class="card-text">{{ produce.description[:100] }}...</p>
+                <div class="mb-2">
+                    <small class="text-muted">{{ produce.quantity }} {{ produce.unit }} available</small><br>
+                    <small class="text-muted">Location: {{ produce.location }}</small>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="badge quality-badge grade-{{ produce.quality_grade.lower() }}">
+                        Grade {{ produce.quality_grade }}
+                    </span>
+                    <span class="text-success fw-bold">${{ produce.base_price }}/{{ produce.unit }}</span>
+                </div>
+                <a href="/produce/{{ produce.id }}" class="btn btn-sm btn-success mt-2 w-100">View & Bid</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+
+<!-- produce_detail.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6">
+        {% if produce.image_path %}
+            <img src="/static/uploads/{{ produce.image_path }}" class="img-fluid rounded">
+        {% else %}
+            <img src="https://via.placeholder.com/500x400/28a745/ffffff?text={{ produce.category }}" class="img-fluid rounded">
+        {% endif %}
+    </div>
+    <div class="col-md-6">
+        <h2>{{ produce.title }}</h2>
+        <span class="badge quality-badge grade-{{ produce.quality_grade.lower() }} mb-3">
+            Grade {{ produce.quality_grade }}
+        </span>
+        
+        <p>{{ produce.description }}</p>
+        
+        <div class="row mb-3">
+            <div class="col-6"><strong>Category:</strong> {{ produce.category }}</div>
+            <div class="col-6"><strong>Quantity:</strong> {{ produce.quantity }} {{ produce.unit }}</div>
+            <div class="col-6"><strong>Base Price:</strong> ${{ produce.base_price }}/{{ produce.unit }}</div>
+            <div class="col-6"><strong>Location:</strong> {{ produce.location }}</div>
+            <div class="col-6"><strong>Harvest Date:</strong> {{ produce.harvest_date }}</div>
+            <div class="col-6"><strong>Expiry Date:</strong> {{ produce.expiry_date }}</div>
+        </div>
+
+        {% if session.user_type == 'buyer' %}
+        <div class="card">
+            <div class="card-header">Place Your Bid</div>
+            <div class="card-body">
+                <form id="bidForm">
+                    <input type="hidden" name="produce_id" value="{{ produce.id }}">
+                    <div class="mb-3">
+                        <label class="form-label">Bid Amount (per {{ produce.unit }})</label>
+                        <input type="number" class="form-control" name="bid_amount" step="0.01" min="0" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Quantity Requested ({{ produce.unit }})</label>
+                        <input type="number" class="form-control" name="quantity_requested" step="0.1" max="{{ produce.quantity }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Message (Optional)</label>
+                        <textarea class="form-control" name="message" rows="3"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-success">Place Bid</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <h4>Current Bids</h4>
+        {% if bids %}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Bidder</th>
+                            <th>Amount</th>
+                            <th>Quantity</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for bid in bids %}
+                        <tr>
+                            <td>{{ bid.buyer.username }}</td>
+                            <td>${{ bid.bid_amount }}/{{ produce.unit }}</td>
+                            <td>{{ bid.quantity_requested }} {{ produce.unit }}</td>
+                            <td>${{ "%.2f"|format(bid.bid_amount * bid.quantity_requested) }}</td>
+                            <td>
+                                <span class="badge bg-{{ 'success' if bid.status == 'accepted' else 'warning' if bid.status == 'pending' else 'danger' }}">
+                                    {{ bid.status.title() }}
+                                </span>
+                            </td>
+                            <td>{{ bid.created_at.strftime('%Y-%m-%d') }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted">No bids yet. Be the first to place a bid!</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('bidForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const data = Object.fromEntries(formData.entries());
+    
+    try {
+        const response = await fetch('/place_bid', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            alert('Bid placed successfully!');
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert(error.error);
+        }
+    } catch (err) {
+        alert('Failed to place bid');
+    }
+});
+</script>
+{% endblock %}
