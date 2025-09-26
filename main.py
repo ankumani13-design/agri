@@ -8,7 +8,7 @@ from PIL import Image
 import io
 
 # ---------------------- PAGE CONFIG ----------------------
-st.set_page_config(page_title="AgriMarket ", page_icon="🌾", layout="wide")
+st.set_page_config(page_title= Welcome to "AgriMarket ", page_icon="🌾", layout="wide")
 
 # ---------------------- CUSTOM CSS ----------------------
 st.markdown("""
@@ -233,7 +233,7 @@ if "cart" not in st.session_state: st.session_state["cart"]={}
 # ---------------------- TOP HEADER ----------------------
 header_html = f"""
 <div class="top-header">
-    <div class="app-title">🌾 AgriMarket Pro</div>
+    <div class="app-title">🌾  Welcomee to AgriMarket </div>
     <div class="top-right">
         {"Welcome, " + st.session_state["username"].title() if st.session_state.get("logged_in") else "Not Logged In"}
     </div>
@@ -241,8 +241,7 @@ header_html = f"""
 """
 st.markdown(header_html, unsafe_allow_html=True)
 
-# ---------------------- PAGE TITLE ----------------------
-st.markdown('<div class="centered-title">Welcome to AgriMarket Pro 🌾</div>', unsafe_allow_html=True)
+# ---------
 
 # ---------------------- NAVIGATION ----------------------
 tabs = ["Home","Login","Register","Admin Panel","Marketplace","Cart","My Purchases","Analytics","Logout"]
