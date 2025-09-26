@@ -12,20 +12,16 @@ st.set_page_config(page_title="AgriMarket Pro", page_icon="🌾", layout="wide")
 
 # ---------------------- DATABASE FUNCTIONS ----------------------
 def get_connection():
-    conn = sqlite3.connect("agrimarket.db", check_same_thread=False)
-    return conn
+    return sqlite3.connect("agrimarket.db", check_same_thread=False)
 
 def create_tables():
     conn = get_connection()
     c = conn.cursor()
-    # Users table
     c.execute('''CREATE TABLE IF NOT EXISTS users (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  username TEXT UNIQUE,
                  password TEXT,
-                 role TEXT
-                 )''')
-    # Products table
+                 role TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS products (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  name TEXT,
@@ -33,16 +29,13 @@ def create_tables():
                  price REAL,
                  quantity INTEGER,
                  image BLOB,
-                 added_on TEXT
-                 )''')
-    # Purchases table
+                 added_on TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS purchases (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  username TEXT,
                  product_id INTEGER,
                  quantity INTEGER,
-                 purchased_on TEXT
-                 )''')
+                 purchased_on TEXT)''')
     conn.commit()
     conn.close()
 
@@ -73,7 +66,7 @@ def authenticate_user(username, password):
     result = c.fetchone()
     conn.close()
     if result and verify_password(password, result[0]):
-        return result[1]  # Return role
+        return result[1]
     return None
 
 def add_product(name, category, price, quantity, image):
@@ -119,12 +112,10 @@ def delete_product(product_id):
 
 def add_purchase(username, product_id, quantity):
     product = get_product_by_id(product_id)
-    if product and product[4] >= quantity:  # Check stock
+    if product and product[4] >= quantity:
+        update_product(product_id, quantity=product[4]-quantity)
         conn = get_connection()
         c = conn.cursor()
-        # Update product quantity
-        update_product(product_id, quantity=product[4]-quantity)
-        # Insert into purchases
         c.execute("INSERT INTO purchases (username, product_id, quantity, purchased_on) VALUES (?, ?, ?, ?)",
                   (username, product_id, quantity, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         conn.commit()
@@ -147,31 +138,27 @@ def image_to_bytes(image_file):
 
 # ---------------------- INITIALIZATION ----------------------
 create_tables()
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
-if "username" not in st.session_state:
-    st.session_state["username"] = ""
-if "role" not in st.session_state:
-    st.session_state["role"] = ""
+if "logged_in" not in st.session_state: st.session_state["logged_in"]=False
+if "username" not in st.session_state: st.session_state["username"]=""
+if "role" not in st.session_state: st.session_state["role"]=""
+if "cart" not in st.session_state: st.session_state["cart"]={}
 
-# ---------------------- SIDEBAR ----------------------
-st.sidebar.title("AgriMarket Pro 🌾")
-menu = st.sidebar.radio("Navigation", ["Home", "Login", "Register", "Admin Panel", "Marketplace", "Analytics", "My Purchases", "Logout"])
+# ---------------------- HORIZONTAL NAVIGATION ----------------------
+tabs = ["Home", "Login", "Register", "Admin Panel", "Marketplace", "Cart", "My Purchases", "Analytics", "Logout"]
+menu = st.radio("Navigate", tabs, index=0, horizontal=True)
 
 # ---------------------- PAGES ----------------------
-
-# ---------------------- HOME PAGE ----------------------
-if menu == "Home":
+# HOME
+if menu=="Home":
     st.title("Welcome to AgriMarket Pro")
     st.markdown("""
-        **AgriMarket Pro** is your one-stop platform to buy and sell agricultural products.
-        - Login or Register to start trading.
-        - Admins can manage products and view analytics.
-        - Users can browse products in Marketplace and track their purchases.
+    **AgriMarket Pro** is your one-stop platform to buy and sell agricultural products.
+    - Admins can manage products and view analytics.
+    - Users can browse products, add to cart, and purchase.
     """)
 
-# ---------------------- REGISTER PAGE ----------------------
-elif menu == "Register":
+# REGISTER
+elif menu=="Register":
     st.title("User Registration")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
@@ -185,43 +172,42 @@ elif menu == "Register":
         else:
             st.warning("Please fill all fields.")
 
-# ---------------------- LOGIN PAGE ----------------------
-elif menu == "Login":
+# LOGIN
+elif menu=="Login":
     st.title("User Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
         role = authenticate_user(username, password)
         if role:
-            st.session_state["logged_in"] = True
-            st.session_state["username"] = username
-            st.session_state["role"] = role
+            st.session_state["logged_in"]=True
+            st.session_state["username"]=username
+            st.session_state["role"]=role
             st.success(f"Login successful! Role: {role}")
         else:
             st.error("Invalid credentials")
 
-# ---------------------- LOGOUT ----------------------
-elif menu == "Logout":
-    st.session_state["logged_in"] = False
-    st.session_state["username"] = ""
-    st.session_state["role"] = ""
+# LOGOUT
+elif menu=="Logout":
+    st.session_state["logged_in"]=False
+    st.session_state["username"]=""
+    st.session_state["role"]=""
+    st.session_state["cart"]={}
     st.success("Logged out successfully.")
 
-# ---------------------- ADMIN PANEL ----------------------
-elif menu == "Admin Panel":
-    if st.session_state.get("logged_in") and st.session_state.get("role") == "admin":
-        st.title("Admin Panel: Manage Products")
-        st.subheader("Add New Product")
+# ADMIN PANEL
+elif menu=="Admin Panel":
+    if st.session_state.get("logged_in") and st.session_state.get("role")=="admin":
+        st.title("Admin Panel")
+        st.subheader("Add Product")
         name = st.text_input("Product Name")
         category = st.text_input("Category")
         price = st.number_input("Price", min_value=0.0)
         quantity = st.number_input("Quantity", min_value=0)
         image_file = st.file_uploader("Upload Image", type=["png","jpg","jpeg"])
-        
         if st.button("Add Product"):
             add_product(name, category, price, quantity, image_to_bytes(image_file))
             st.success("Product added successfully!")
-        
         st.subheader("All Products")
         products = get_all_products()
         for p in products:
@@ -237,75 +223,100 @@ elif menu == "Admin Panel":
     else:
         st.warning("Admin access required.")
 
-# ---------------------- MARKETPLACE (USER) ----------------------
-elif menu == "Marketplace":
+# MARKETPLACE - CARD GRID
+elif menu=="Marketplace":
     if st.session_state.get("logged_in"):
-        st.title("Marketplace: Browse Products")
+        st.title("Marketplace")
         products = get_all_products()
         if products:
-            df = pd.DataFrame(products, columns=["ID","Name","Category","Price","Quantity","Image","Added_On"])
-            categories = ["All"] + df["Category"].unique().tolist()
-            selected_category = st.selectbox("Filter by Category", categories)
-            
-            filtered_df = df if selected_category=="All" else df[df["Category"]==selected_category]
-            
-            for index, row in filtered_df.iterrows():
-                cols = st.columns([2,2,1,1,1])
-                # Display image if exists
-                if row["Image"]:
-                    image = Image.open(io.BytesIO(row["Image"]))
-                    cols[0].image(image, width=100)
+            df=pd.DataFrame(products, columns=["ID","Name","Category","Price","Quantity","Image","Added_On"])
+            categories=["All"]+df["Category"].unique().tolist()
+            selected_category=st.selectbox("Filter by Category", categories)
+            filtered_df=df if selected_category=="All" else df[df["Category"]==selected_category]
+
+            # Display products in grid cards
+            cols_per_row = 3
+            for i in range(0, len(filtered_df), cols_per_row):
+                cols = st.columns(cols_per_row)
+                for idx, row in enumerate(filtered_df.iloc[i:i+cols_per_row].itertuples()):
+                    with cols[idx]:
+                        st.image(Image.open(io.BytesIO(row.Image)) if row.Image else None, use_column_width=True)
+                        st.markdown(f"**{row.Name}**")
+                        st.write(f"Category: {row.Category}")
+                        st.write(f"Price: ₹{row.Price}")
+                        qty_to_add = st.number_input("Qty", min_value=0, max_value=row.Quantity, key=f"{row.ID}_market_qty")
+                        if st.button("Add to Cart", key=f"{row.ID}_market_btn"):
+                            if qty_to_add>0:
+                                st.session_state["cart"][row.ID] = st.session_state["cart"].get(row.ID,0)+qty_to_add
+                                st.success(f"Added {qty_to_add} of {row.Name} to cart")
+                                st.experimental_rerun()
+                            else:
+                                st.warning("Enter quantity to add.")
+
+# CART
+elif menu=="Cart":
+    if st.session_state.get("logged_in"):
+        st.title("Your Cart")
+        if st.session_state["cart"]:
+            cart_items=st.session_state["cart"]
+            products=get_all_products()
+            df=pd.DataFrame(products, columns=["ID","Name","Category","Price","Quantity","Image","Added_On"])
+            total_amount=0
+            for pid, qty in cart_items.items():
+                product_row=df[df["ID"]==pid].iloc[0]
+                cols = st.columns([1,3,1,1,1])
+                if product_row["Image"]:
+                    cols[0].image(Image.open(io.BytesIO(product_row["Image"])), width=80)
                 else:
                     cols[0].write("No Image")
-                cols[1].write(row["Name"])
-                cols[2].write(row["Category"])
-                cols[3].write(f"₹{row['Price']}")
-                qty_to_buy = cols[4].number_input("Qty", min_value=0, max_value=row["Quantity"], key=f"{row['ID']}_qty")
-                if cols[4].button("Buy", key=row["ID"]):
-                    if qty_to_buy>0:
-                        success = add_purchase(st.session_state["username"], row["ID"], qty_to_buy)
-                        if success:
-                            st.success(f"Purchased {qty_to_buy} of {row['Name']}")
-                            st.experimental_rerun()
-                        else:
-                            st.error("Purchase failed. Not enough stock.")
-                    else:
-                        st.warning("Enter quantity to buy.")
+                cols[1].write(f"**{product_row['Name']}**\nCategory: {product_row['Category']}")
+                cols[2].write(f"Price: ₹{product_row['Price']}")
+                cols[3].write(f"Qty: {qty}")
+                cols[4].write(f"Total: ₹{qty*product_row['Price']}")
+                total_amount+=qty*product_row['Price']
+            st.write(f"### Total Amount: ₹{total_amount}")
+            if st.button("Checkout"):
+                success_count=0
+                for pid, qty in cart_items.items():
+                    if add_purchase(st.session_state["username"], pid, qty):
+                        success_count+=1
+                if success_count>0:
+                    st.success(f"Purchase successful for {success_count} products!")
+                    st.session_state["cart"]={}
+                    st.experimental_rerun()
+                else:
+                    st.error("Purchase failed. Check product stock.")
         else:
-            st.info("No products available.")
+            st.info("Your cart is empty.")
 
-# ---------------------- USER PURCHASES ----------------------
-elif menu == "My Purchases":
+# MY PURCHASES
+elif menu=="My Purchases":
     if st.session_state.get("logged_in"):
         st.title("My Purchase History")
-        purchases = get_user_purchases(st.session_state["username"])
+        purchases=get_user_purchases(st.session_state["username"])
         if purchases:
-            df = pd.DataFrame(purchases, columns=["ID","Product","Category","Quantity","Price","Purchased_On"])
-            df["Total_Price"] = df["Quantity"]*df["Price"]
+            df=pd.DataFrame(purchases, columns=["ID","Product","Category","Quantity","Price","Purchased_On"])
+            df["Total_Price"]=df["Quantity"]*df["Price"]
             st.dataframe(df)
         else:
             st.info("No purchases yet.")
     else:
-        st.warning("Login required to view purchases.")
+        st.warning("Login required.")
 
-# ---------------------- ANALYTICS PAGE ----------------------
-elif menu == "Analytics":
+# ANALYTICS
+elif menu=="Analytics":
     if st.session_state.get("logged_in") and st.session_state.get("role")=="admin":
-        st.title("AgriMarket Analytics")
-        products = get_all_products()
+        st.title("Analytics")
+        products=get_all_products()
         if products:
-            df = pd.DataFrame(products, columns=["ID","Name","Category","Price","Quantity","Image","Added_On"])
+            df=pd.DataFrame(products, columns=["ID","Name","Category","Price","Quantity","Image","Added_On"])
             st.subheader("Product Overview")
             st.dataframe(df.drop(columns="Image"))
-            
             st.subheader("Price Distribution by Category")
-            fig = px.box(df, x="Category", y="Price", color="Category")
-            st.plotly_chart(fig)
-            
+            st.plotly_chart(px.box(df,x="Category",y="Price",color="Category"))
             st.subheader("Quantity vs Price Scatter")
-            fig2 = px.scatter(df, x="Quantity", y="Price", color="Category", size="Price")
-            st.plotly_chart(fig2)
+            st.plotly_chart(px.scatter(df,x="Quantity",y="Price",color="Category",size="Price"))
         else:
-            st.info("No products available for analytics.")
+            st.info("No products available.")
     else:
         st.warning("Admin access required.")
