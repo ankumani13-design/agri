@@ -1,1206 +1,331 @@
 import streamlit as st
-import pandas as pd
-import sqlite3
-import hashlib
-import uuid
-from datetime import datetime, date, timedelta
-import plotly.express as px
-import plotly.graph_objects as go
-from PIL import Image
-import io
-import base64
-import random
+from PIL import Image, ImageStat, ImageFilter
 import numpy as np
+import sqlite3
+import io
+import datetime
+import base64
+import os
 
-# Set page configuration
-st.set_page_config(
-    page_title="AgriMarket Pro",
-    page_icon="🌾",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# -------------------------
+# Database helpers
+# -------------------------
+DB_PATH = "market.db"
 
-# Custom CSS for better styling
-st.markdown("""
-<style>
-    .main-header {
-        background: linear-gradient(90deg, #2E7D32, #4CAF50);
-        padding: 1rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    
-    .produce-card {
-        background: white;
-        padding: 1rem;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        margin-bottom: 1rem;
-        border-left: 4px solid #4CAF50;
-    }
-    
-    .grade-premium { background-color: #28a745; color: white; padding: 0.25rem 0.5rem; border-radius: 15px; }
-    .grade-a { background-color: #17a2b8; color: white; padding: 0.25rem 0.5rem; border-radius: 15px; }
-    .grade-b { background-color: #ffc107; color: black; padding: 0.25rem 0.5rem; border-radius: 15px; }
-    .grade-c { background-color: #dc3545; color: white; padding: 0.25rem 0.5rem; border-radius: 15px; }
-    
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 1rem;
-        border-radius: 10px;
-        text-align: center;
-    }
-    
-    .bid-success { background-color: #d4edda; padding: 1rem; border-radius: 5px; border: 1px solid #c3e6cb; }
-    .bid-pending { background-color: #fff3cd; padding: 1rem; border-radius: 5px; border: 1px solid #ffeaa7; }
-    .bid-rejected { background-color: #f8d7da; padding: 1rem; border-radius: 5px; border: 1px solid #f5c6cb; }
-</style>
-""", unsafe_allow_html=True)
-
-# Database initialization
-@st.cache_resource
-def init_database():
-    conn = sqlite3.connect('agri_marketplace.db', check_same_thread=False)
-    cursor = conn.cursor()
-    
-    # Users table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
+def init_db():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS listings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            user_type TEXT NOT NULL,
-            phone TEXT,
-            address TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    # Produce table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS produce (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            farmer_id INTEGER NOT NULL,
-            title TEXT NOT NULL,
+            title TEXT,
             description TEXT,
-            category TEXT NOT NULL,
-            quantity REAL NOT NULL,
-            unit TEXT NOT NULL,
-            base_price REAL NOT NULL,
-            quality_grade TEXT,
-            harvest_date DATE,
-            expiry_date DATE,
-            location TEXT,
-            image_data TEXT,
-            status TEXT DEFAULT 'active',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (farmer_id) REFERENCES users (id)
+            quantity TEXT,
+            base_price REAL,
+            image BLOB,
+            grade TEXT,
+            created_at TEXT
         )
     ''')
-    
-    # Bids table
-    cursor.execute('''
+    c.execute('''
         CREATE TABLE IF NOT EXISTS bids (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            produce_id INTEGER NOT NULL,
-            buyer_id INTEGER NOT NULL,
-            bid_amount REAL NOT NULL,
-            quantity_requested REAL NOT NULL,
-            message TEXT,
-            status TEXT DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (produce_id) REFERENCES produce (id),
-            FOREIGN KEY (buyer_id) REFERENCES users (id)
+            listing_id INTEGER,
+            bidder_name TEXT,
+            bid_amount REAL,
+            bid_time TEXT,
+            FOREIGN KEY(listing_id) REFERENCES listings(id)
         )
     ''')
-    
-    # Transactions table
-    cursor.execute('''
+    c.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            transaction_id TEXT UNIQUE NOT NULL,
-            bid_id INTEGER NOT NULL,
-            farmer_id INTEGER NOT NULL,
-            buyer_id INTEGER NOT NULL,
-            amount REAL NOT NULL,
-            payment_method TEXT,
-            payment_status TEXT DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (bid_id) REFERENCES bids (id),
-            FOREIGN KEY (farmer_id) REFERENCES users (id),
-            FOREIGN KEY (buyer_id) REFERENCES users (id)
+            listing_id INTEGER,
+            buyer_name TEXT,
+            amount REAL,
+            status TEXT,
+            timestamp TEXT,
+            note TEXT,
+            FOREIGN KEY(listing_id) REFERENCES listings(id)
         )
     ''')
-    
     conn.commit()
     return conn
 
-# AI Quality Analysis Simulation
-def analyze_produce_quality(image):
-    """
-    Simulate AI-based quality analysis of produce images
-    In production, this would integrate with actual computer vision models
-    """
-    if image is not None:
-        # Simulate analysis based on image properties
-        img_array = np.array(image)
-        
-        # Simulate quality metrics
-        brightness = np.mean(img_array)
-        color_variance = np.var(img_array)
-        
-        # Generate quality grade based on simulated analysis
-        if brightness > 120 and color_variance > 1000:
-            grade = "Premium"
-            confidence = random.uniform(90, 98)
-            defects = "None detected"
-            freshness = random.uniform(95, 100)
-        elif brightness > 100:
-            grade = "A"
-            confidence = random.uniform(80, 90)
-            defects = random.choice(["None", "Minor discoloration"])
-            freshness = random.uniform(85, 95)
-        elif brightness > 80:
-            grade = "B"
-            confidence = random.uniform(70, 80)
-            defects = random.choice(["Minor spots", "Small bruises"])
-            freshness = random.uniform(75, 85)
+conn = init_db()
+
+# -------------------------
+# Utilities
+# -------------------------
+def pil_image_to_bytes(img: Image.Image):
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    return buf.getvalue()
+
+def bytes_to_pil_image(b: bytes):
+    return Image.open(io.BytesIO(b))
+
+def now_str():
+    return datetime.datetime.utcnow().isoformat() + "Z"
+
+# -------------------------
+# Simple image "AI" grader
+# (placeholder — replace with a real model if desired)
+# Criteria used:
+#  - brightness (avg channel)
+#  - sharpness (via edge enhancement / laplacian-ish by using filter and variance)
+# -------------------------
+def grade_image(pil_img: Image.Image):
+    # convert to RGB, resize to speed up calc
+    img = pil_img.convert("RGB").resize((300,300))
+    stat = ImageStat.Stat(img)
+    # brightness as average of channels
+    brightness = sum(stat.mean) / 3.0  # 0-255
+    # measure "sharpness" via variance of grayscale
+    gray = img.convert("L")
+    arr = np.asarray(gray).astype(np.float32)
+    var = arr.var()
+    # simple scoring
+    score = (brightness / 255.0) * 0.6 + (min(var / 2000.0, 1.0)) * 0.4
+    # Map score to grade
+    if score > 0.68:
+        return "A"
+    elif score > 0.45:
+        return "B"
+    else:
+        return "C"
+
+# -------------------------
+# CRUD + business logic
+# -------------------------
+def create_listing(title, description, quantity, base_price, image_bytes, grade):
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO listings (title, description, quantity, base_price, image, grade, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (title, description, quantity, base_price, image_bytes, grade, now_str()))
+    conn.commit()
+    return c.lastrowid
+
+def get_listings():
+    c = conn.cursor()
+    c.execute('SELECT id, title, description, quantity, base_price, image, grade, created_at FROM listings ORDER BY created_at DESC')
+    return c.fetchall()
+
+def get_listing(listing_id):
+    c = conn.cursor()
+    c.execute('SELECT id, title, description, quantity, base_price, image, grade, created_at FROM listings WHERE id=?', (listing_id,))
+    return c.fetchone()
+
+def get_highest_bid(listing_id):
+    c = conn.cursor()
+    c.execute('SELECT bidder_name, bid_amount, bid_time FROM bids WHERE listing_id=? ORDER BY bid_amount DESC, bid_time ASC LIMIT 1', (listing_id,))
+    return c.fetchone()
+
+def add_bid(listing_id, bidder_name, amount):
+    c = conn.cursor()
+    c.execute('INSERT INTO bids (listing_id, bidder_name, bid_amount, bid_time) VALUES (?, ?, ?, ?)',
+              (listing_id, bidder_name, amount, now_str()))
+    conn.commit()
+    return c.lastrowid
+
+def record_transaction(listing_id, buyer_name, amount, status="Completed", note="Simulated payment"):
+    c = conn.cursor()
+    c.execute('INSERT INTO transactions (listing_id, buyer_name, amount, status, timestamp, note) VALUES (?, ?, ?, ?, ?, ?)',
+              (listing_id, buyer_name, amount, status, now_str(), note))
+    conn.commit()
+    return c.lastrowid
+
+def get_transactions():
+    c = conn.cursor()
+    c.execute('SELECT id, listing_id, buyer_name, amount, status, timestamp, note FROM transactions ORDER BY timestamp DESC')
+    return c.fetchall()
+
+def get_bids_for_listing(listing_id):
+    c = conn.cursor()
+    c.execute('SELECT bidder_name, bid_amount, bid_time FROM bids WHERE listing_id=? ORDER BY bid_amount DESC', (listing_id,))
+    return c.fetchall()
+
+# -------------------------
+# Streamlit UI
+# -------------------------
+st.set_page_config(page_title="AgriMarket", page_icon="🌾", layout="wide")
+
+st.title("🌾 AgriMarket — Digital Marketplace for Farmers")
+
+menu = st.sidebar.selectbox("Choose a page", ["Create Listing", "Browse & Bid", "Transactions / Admin", "How to integrate real AI & Payments"])
+
+if menu == "Create Listing":
+    st.header("Create a new produce listing")
+    with st.form("create_form", clear_on_submit=True):
+        title = st.text_input("Produce name (e.g., 'Tomatoes - Fresh')", max_chars=120)
+        description = st.text_area("Description (variety, harvest date, storage, etc.)", height=120)
+        quantity = st.text_input("Quantity (e.g., '100 kg' or '50 crates')")
+        base_price = st.number_input("Base price (₹ per unit or per kg)", min_value=0.0, format="%.2f")
+        image_file = st.file_uploader("Upload an image (optional) — can be used for quality grading", type=["png","jpg","jpeg"])
+        do_grade = st.checkbox("Run automatic quality grading on image (simple heuristic)", value=True)
+        submitted = st.form_submit_button("Create listing")
+
+    if submitted:
+        if not title:
+            st.error("Please provide a produce name.")
         else:
-            grade = "C"
-            confidence = random.uniform(60, 70)
-            defects = random.choice(["Visible damage", "Color variations"])
-            freshness = random.uniform(60, 75)
+            image_bytes = None
+            grade = None
+            if image_file is not None:
+                img = Image.open(image_file)
+                image_bytes = pil_image_to_bytes(img)
+                if do_grade:
+                    try:
+                        grade = grade_image(img)
+                    except Exception as e:
+                        st.warning(f"Grading failed: {e}")
+                        grade = None
+            listing_id = create_listing(title, description, quantity, base_price, image_bytes, grade)
+            st.success(f"Listing created (ID: {listing_id})")
+            if grade:
+                st.info(f"Assigned grade: {grade}")
+
+elif menu == "Browse & Bid":
+    st.header("Browse listings and place bids")
+    listings = get_listings()
+    if not listings:
+        st.info("No listings yet. Ask a farmer to add produce.")
     else:
-        grade = "Not Graded"
-        confidence = 0
-        defects = "No image provided"
-        freshness = 0
-    
-    return {
-        'grade': grade,
-        'confidence': confidence,
-        'defects': defects,
-        'freshness_score': freshness
-    }
+        for row in listings:
+            (lid, title, description, quantity, base_price, image_blob, grade, created_at) = row
+            card = st.container()
+            with card:
+                cols = st.columns([1,3])
+                with cols[0]:
+                    if image_blob:
+                        img = bytes_to_pil_image(image_blob)
+                        st.image(img, use_column_width=True, caption=f"Grade: {grade}" if grade else "No grade")
+                    else:
+                        st.write("No image")
+                with cols[1]:
+                    st.subheader(f"{title}  —  {quantity}")
+                    st.write(description)
+                    st.write(f"Base price: ₹{base_price:.2f}")
+                    if grade:
+                        st.write(f"Quality grade: **{grade}**")
+                    st.write(f"Listing created: {created_at.split('T')[0]}")
+                    hb = get_highest_bid(lid)
+                    if hb:
+                        st.write(f"Highest bid: ₹{hb[1]:.2f} by {hb[0]} at {hb[2]}")
+                    else:
+                        st.write("No bids yet")
+                    # show all bids
+                    with st.expander("See all bids"):
+                        bids = get_bids_for_listing(lid)
+                        if not bids:
+                            st.write("No bids")
+                        else:
+                            for b in bids:
+                                st.write(f"₹{b[1]:.2f} — {b[0]} at {b[2]}")
+                    # bidding form
+                    with st.form(f"bid_form_{lid}", clear_on_submit=False):
+                        bidder_name = st.text_input("Your name", key=f"name_{lid}")
+                        current_offer = float(hb[1]) if hb else base_price
+                        bid_amount = st.number_input(f"Your bid (must be greater than ₹{current_offer:.2f})", min_value=0.0, format="%.2f", key=f"bid_{lid}")
+                        place = st.form_submit_button("Place bid")
+                        if place:
+                            if not bidder_name:
+                                st.error("Enter your name to place a bid.")
+                            elif bid_amount <= current_offer:
+                                st.error(f"Your bid must be greater than current highest ₹{current_offer:.2f}")
+                            else:
+                                add_bid(lid, bidder_name, bid_amount)
+                                st.success(f"Bid of ₹{bid_amount:.2f} placed by {bidder_name}")
+                                st.experimental_rerun()  # refresh to show updated highest bid
 
-# Utility functions
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+                    # Simulated buy/pay now block
+                    st.markdown("---")
+                    st.write("If you have the highest bid and want to complete the purchase, use the payment area below.")
+                    with st.form(f"pay_form_{lid}"):
+                        pay_buyer = st.text_input("Buyer name (to record transaction)", key=f"payname_{lid}")
+                        pay_amount = st.number_input("Pay amount (₹)", min_value=0.0, format="%.2f", key=f"payamount_{lid}")
+                        pay_note = st.text_input("Note (optional)", key=f"paynote_{lid}")
+                        pay = st.form_submit_button("Simulate Pay & Record Transaction")
+                        if pay:
+                            # In a real system you'd check order ownership, payment gateway confirmation, etc.
+                            if not pay_buyer:
+                                st.error("Provide buyer name.")
+                            elif pay_amount <= 0.0:
+                                st.error("Pay amount must be positive.")
+                            else:
+                                # Simulate payment processing
+                                # TODO: integrate with Stripe/PayPal here and only record on successful confirmation
+                                tid = record_transaction(lid, pay_buyer, pay_amount, status="Completed", note=pay_note or "Simulated payment")
+                                st.success(f"Payment recorded (Transaction ID: {tid}).")
+                                st.info("This is a simulated payment. Replace with a real gateway for production.")
 
-def verify_password(password, hash_password):
-    return hash_password == hashlib.sha256(password.encode()).hexdigest()
-
-def generate_transaction_id():
-    return f"TXN_{uuid.uuid4().hex[:8].upper()}"
-
-# Session state initialization
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-if 'user_id' not in st.session_state:
-    st.session_state.user_id = None
-if 'user_type' not in st.session_state:
-    st.session_state.user_type = None
-if 'username' not in st.session_state:
-    st.session_state.username = None
-
-# Initialize database
-conn = init_database()
-
-def main():
-    st.markdown("""
-    <div class="main-header">
-        <h1>🌾 AgriMarket Pro</h1>
-        <p>AI-Powered Agricultural Marketplace with Smart Bidding & Secure Payments</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Sidebar navigation
-    if st.session_state.authenticated:
-        st.sidebar.success(f"Welcome, {st.session_state.username}!")
-        st.sidebar.write(f"Role: {st.session_state.user_type.title()}")
-        
-        if st.session_state.user_type == 'farmer':
-            page = st.sidebar.selectbox("Navigate", [
-                "🏠 Dashboard", 
-                "📦 My Produce", 
-                "➕ Add Produce", 
-                "💰 Bids & Transactions",
-                "📊 Analytics"
-            ])
-        else:  # buyer
-            page = st.sidebar.selectbox("Navigate", [
-                "🏠 Dashboard", 
-                "🛒 Browse Produce", 
-                "💰 My Bids", 
-                "💳 Transactions",
-                "📈 Market Trends"
-            ])
-        
-        if st.sidebar.button("🚪 Logout"):
-            for key in ['authenticated', 'user_id', 'user_type', 'username']:
-                st.session_state[key] = None if key != 'authenticated' else False
-            st.rerun()
-    else:
-        page = st.sidebar.selectbox("Choose Action", ["🔑 Login", "📝 Register", "🌾 Browse (Guest)"])
-    
-    # Page routing
-    if not st.session_state.authenticated:
-        if page == "🔑 Login":
-            login_page()
-        elif page == "📝 Register":
-            register_page()
-        elif page == "🌾 Browse (Guest)":
-            browse_produce_page(guest_mode=True)
-    else:
-        if page == "🏠 Dashboard":
-            dashboard_page()
-        elif page == "📦 My Produce":
-            my_produce_page()
-        elif page == "➕ Add Produce":
-            add_produce_page()
-        elif page == "💰 Bids & Transactions" or page == "💳 Transactions":
-            transactions_page()
-        elif page == "🛒 Browse Produce":
-            browse_produce_page()
-        elif page == "💰 My Bids":
-            my_bids_page()
-        elif page == "📊 Analytics" or page == "📈 Market Trends":
-            analytics_page()
-
-def login_page():
-    st.header("🔑 Login")
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        with st.form("login_form"):
-            email = st.text_input("📧 Email")
-            password = st.text_input("🔒 Password", type="password")
-            submit = st.form_submit_button("Login", use_container_width=True)
-            
-            if submit:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, username, user_type, password_hash FROM users WHERE email = ?", (email,))
-                user = cursor.fetchone()
-                
-                if user and verify_password(password, user[3]):
-                    st.session_state.authenticated = True
-                    st.session_state.user_id = user[0]
-                    st.session_state.username = user[1]
-                    st.session_state.user_type = user[2]
-                    st.success("Login successful!")
-                    st.rerun()
-                else:
-                    st.error("Invalid email or password")
-
-def register_page():
-    st.header("📝 Register")
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        with st.form("register_form"):
-            username = st.text_input("👤 Username")
-            email = st.text_input("📧 Email")
-            password = st.text_input("🔒 Password", type="password")
-            confirm_password = st.text_input("🔒 Confirm Password", type="password")
-            user_type = st.selectbox("👥 User Type", ["farmer", "buyer"])
-            phone = st.text_input("📱 Phone (Optional)")
-            address = st.text_area("📍 Address (Optional)")
-            
-            submit = st.form_submit_button("Register", use_container_width=True)
-            
-            if submit:
-                if password != confirm_password:
-                    st.error("Passwords don't match!")
-                    return
-                
-                cursor = conn.cursor()
-                
-                # Check if user already exists
-                cursor.execute("SELECT id FROM users WHERE email = ? OR username = ?", (email, username))
-                if cursor.fetchone():
-                    st.error("User with this email or username already exists!")
-                    return
-                
-                # Create new user
-                try:
-                    cursor.execute("""
-                        INSERT INTO users (username, email, password_hash, user_type, phone, address)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (username, email, hash_password(password), user_type, phone, address))
-                    conn.commit()
-                    st.success("Registration successful! Please login.")
-                except Exception as e:
-                    st.error(f"Registration failed: {str(e)}")
-
-def dashboard_page():
-    st.header("🏠 Dashboard")
-    
-    if st.session_state.user_type == 'farmer':
-        farmer_dashboard()
-    else:
-        buyer_dashboard()
-
-def farmer_dashboard():
-    cursor = conn.cursor()
-    
-    # Fetch farmer statistics
-    cursor.execute("SELECT COUNT(*) FROM produce WHERE farmer_id = ?", (st.session_state.user_id,))
-    total_listings = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM produce WHERE farmer_id = ? AND status = 'active'", (st.session_state.user_id,))
-    active_listings = cursor.fetchone()[0]
-    
-    cursor.execute("""
-        SELECT COUNT(*) FROM bids b 
-        JOIN produce p ON b.produce_id = p.id 
-        WHERE p.farmer_id = ? AND b.status = 'pending'
-    """, (st.session_state.user_id,))
-    pending_bids = cursor.fetchone()[0]
-    
-    cursor.execute("""
-        SELECT COALESCE(SUM(t.amount), 0) FROM transactions t 
-        WHERE t.farmer_id = ? AND t.payment_status = 'completed'
-    """, (st.session_state.user_id,))
-    total_earnings = cursor.fetchone()[0]
-    
-    # Display metrics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown("""
-        <div class="metric-card">
-            <h3>📦</h3>
-            <h2>{}</h2>
-            <p>Total Listings</p>
-        </div>
-        """.format(total_listings), unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("""
-        <div class="metric-card">
-            <h3>✅</h3>
-            <h2>{}</h2>
-            <p>Active Listings</p>
-        </div>
-        """.format(active_listings), unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown("""
-        <div class="metric-card">
-            <h3>⏳</h3>
-            <h2>{}</h2>
-            <p>Pending Bids</p>
-        </div>
-        """.format(pending_bids), unsafe_allow_html=True)
-    
-    with col4:
-        st.markdown("""
-        <div class="metric-card">
-            <h3>💰</h3>
-            <h2>${:.2f}</h2>
-            <p>Total Earnings</p>
-        </div>
-        """.format(total_earnings), unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    # Recent bids
-    st.subheader("🎯 Recent Bids")
-    cursor.execute("""
-        SELECT b.*, p.title, u.username, b.created_at
-        FROM bids b
-        JOIN produce p ON b.produce_id = p.id
-        JOIN users u ON b.buyer_id = u.id
-        WHERE p.farmer_id = ?
-        ORDER BY b.created_at DESC
-        LIMIT 10
-    """, (st.session_state.user_id,))
-    
-    recent_bids = cursor.fetchall()
-    
-    if recent_bids:
-        for bid in recent_bids:
-            col1, col2, col3 = st.columns([2, 2, 1])
-            
-            with col1:
-                st.write(f"**{bid[5]}** by {bid[6]}")
-                st.write(f"Quantity: {bid[4]} units")
-            
-            with col2:
-                st.write(f"Bid: ${bid[3]:.2f}")
-                st.write(f"Total: ${bid[3] * bid[4]:.2f}")
-            
-            with col3:
-                status_class = f"bid-{bid[6]}" if bid[6] in ['success', 'pending', 'rejected'] else 'bid-pending'
-                st.markdown(f'<div class="{status_class}">{bid[6].title()}</div>', unsafe_allow_html=True)
-                
-                if bid[6] == 'pending':
-                    if st.button(f"Accept", key=f"accept_{bid[0]}"):
-                        accept_bid(bid[0])
-                    if st.button(f"Reject", key=f"reject_{bid[0]}"):
-                        reject_bid(bid[0])
-            
-            st.markdown("---")
-    else:
-        st.info("No bids yet. Add more produce to attract buyers!")
-
-def buyer_dashboard():
-    cursor = conn.cursor()
-    
-    # Fetch buyer statistics
-    cursor.execute("SELECT COUNT(*) FROM bids WHERE buyer_id = ?", (st.session_state.user_id,))
-    total_bids = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM bids WHERE buyer_id = ? AND status = 'pending'", (st.session_state.user_id,))
-    pending_bids = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM bids WHERE buyer_id = ? AND status = 'accepted'", (st.session_state.user_id,))
-    accepted_bids = cursor.fetchone()[0]
-    
-    cursor.execute("""
-        SELECT COALESCE(SUM(t.amount), 0) FROM transactions t 
-        WHERE t.buyer_id = ? AND t.payment_status = 'completed'
-    """, (st.session_state.user_id,))
-    total_spent = cursor.fetchone()[0]
-    
-    # Display metrics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown("""
-        <div class="metric-card">
-            <h3>🎯</h3>
-            <h2>{}</h2>
-            <p>Total Bids</p>
-        </div>
-        """.format(total_bids), unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("""
-        <div class="metric-card">
-            <h3>⏳</h3>
-            <h2>{}</h2>
-            <p>Pending Bids</p>
-        </div>
-        """.format(pending_bids), unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown("""
-        <div class="metric-card">
-            <h3>✅</h3>
-            <h2>{}</h2>
-            <p>Accepted Bids</p>
-        </div>
-        """.format(accepted_bids), unsafe_allow_html=True)
-    
-    with col4:
-        st.markdown("""
-        <div class="metric-card">
-            <h3>💳</h3>
-            <h2>${:.2f}</h2>
-            <p>Total Spent</p>
-        </div>
-        """.format(total_spent), unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    # Recent produce
-    st.subheader("🌾 Fresh Produce")
-    cursor.execute("""
-        SELECT p.*, u.username as farmer_name
-        FROM produce p
-        JOIN users u ON p.farmer_id = u.id
-        WHERE p.status = 'active'
-        ORDER BY p.created_at DESC
-        LIMIT 6
-    """)
-    
-    recent_produce = cursor.fetchall()
-    
-    if recent_produce:
-        cols = st.columns(3)
-        for idx, produce in enumerate(recent_produce):
-            with cols[idx % 3]:
-                display_produce_card(produce)
-    else:
-        st.info("No produce available at the moment.")
-
-def add_produce_page():
-    st.header("➕ Add New Produce")
-    
-    with st.form("add_produce_form"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            title = st.text_input("🏷️ Product Title *")
-            category = st.selectbox("🗂️ Category *", [
-                "Vegetables", "Fruits", "Grains", "Pulses", 
-                "Spices", "Herbs", "Dairy", "Others"
-            ])
-            quantity = st.number_input("📊 Quantity *", min_value=0.1, step=0.1)
-            unit = st.selectbox("📏 Unit *", ["kg", "tons", "bags", "boxes", "pieces"])
-            base_price = st.number_input("💰 Base Price (per unit) *", min_value=0.01, step=0.01)
-        
-        with col2:
-            harvest_date = st.date_input("📅 Harvest Date", max_value=date.today())
-            expiry_date = st.date_input("⏰ Expiry Date", min_value=date.today())
-            location = st.text_input("📍 Location *")
-            
-            # Image upload
-            uploaded_image = st.file_uploader(
-                "📸 Upload Product Image", 
-                type=['png', 'jpg', 'jpeg'],
-                help="Upload a clear image for AI quality analysis"
-            )
-        
-        description = st.text_area("📝 Description")
-        
-        submit = st.form_submit_button("🚀 Add Produce", use_container_width=True)
-        
-        if submit:
-            if not all([title, category, quantity, unit, base_price, location]):
-                st.error("Please fill in all required fields marked with *")
-                return
-            
-            # Process image and get AI analysis
-            image_data = None
-            quality_grade = "Not Graded"
-            
-            if uploaded_image:
-                # Convert image to base64 for storage
-                image = Image.open(uploaded_image)
-                buffer = io.BytesIO()
-                image.save(buffer, format="PNG")
-                image_data = base64.b64encode(buffer.getvalue()).decode()
-                
-                # AI quality analysis
-                analysis = analyze_produce_quality(image)
-                quality_grade = analysis['grade']
-                
-                # Display analysis results
-                st.success("🤖 AI Quality Analysis Complete!")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Quality Grade", analysis['grade'])
-                with col2:
-                    st.metric("Confidence", f"{analysis['confidence']:.1f}%")
-                with col3:
-                    st.metric("Freshness Score", f"{analysis['freshness_score']:.1f}")
-                
-                st.info(f"Defects: {analysis['defects']}")
-            
-            # Insert into database
-            cursor = conn.cursor()
-            try:
-                cursor.execute("""
-                    INSERT INTO produce (
-                        farmer_id, title, description, category, quantity, unit, 
-                        base_price, quality_grade, harvest_date, expiry_date, 
-                        location, image_data
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    st.session_state.user_id, title, description, category, 
-                    quantity, unit, base_price, quality_grade, harvest_date, 
-                    expiry_date, location, image_data
-                ))
-                conn.commit()
-                st.success("✅ Produce added successfully!")
-                
-                # Clear form by rerunning
-                st.balloons()
-                
-            except Exception as e:
-                st.error(f"Error adding produce: {str(e)}")
-
-def browse_produce_page(guest_mode=False):
-    st.header("🛒 Browse Fresh Produce")
-    
-    # Filters
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        category_filter = st.selectbox("Category", ["All"] + [
-            "Vegetables", "Fruits", "Grains", "Pulses", 
-            "Spices", "Herbs", "Dairy", "Others"
-        ])
-    
-    with col2:
-        quality_filter = st.selectbox("Quality Grade", ["All", "Premium", "A", "B", "C"])
-    
-    with col3:
-        location_filter = st.text_input("Location")
-    
-    with col4:
-        sort_by = st.selectbox("Sort By", ["Newest", "Price Low-High", "Price High-Low", "Quality"])
-    
-    # Build query
-    query = """
-        SELECT p.*, u.username as farmer_name
-        FROM produce p
-        JOIN users u ON p.farmer_id = u.id
-        WHERE p.status = 'active'
-    """
-    params = []
-    
-    if category_filter != "All":
-        query += " AND p.category = ?"
-        params.append(category_filter)
-    
-    if quality_filter != "All":
-        query += " AND p.quality_grade = ?"
-        params.append(quality_filter)
-    
-    if location_filter:
-        query += " AND p.location LIKE ?"
-        params.append(f"%{location_filter}%")
-    
-    # Add sorting
-    if sort_by == "Newest":
-        query += " ORDER BY p.created_at DESC"
-    elif sort_by == "Price Low-High":
-        query += " ORDER BY p.base_price ASC"
-    elif sort_by == "Price High-Low":
-        query += " ORDER BY p.base_price DESC"
-    elif sort_by == "Quality":
-        query += " ORDER BY p.quality_grade ASC"
-    
-    cursor = conn.cursor()
-    cursor.execute(query, params)
-    produce_list = cursor.fetchall()
-    
-    if produce_list:
-        # Display produce in cards
-        cols = st.columns(3)
-        for idx, produce in enumerate(produce_list):
-            with cols[idx % 3]:
-                display_produce_card(produce, guest_mode)
-    else:
-        st.info("No produce found matching your criteria.")
-
-def display_produce_card(produce, guest_mode=False):
-    """Display a produce card with bidding functionality"""
-    
-    # Unpack produce data
-    (id, farmer_id, title, description, category, quantity, unit, base_price, 
-     quality_grade, harvest_date, expiry_date, location, image_data, 
-     status, created_at, farmer_name) = produce
-    
-    with st.container():
-        st.markdown('<div class="produce-card">', unsafe_allow_html=True)
-        
-        # Display image if available
-        if image_data:
-            try:
-                image = Image.open(io.BytesIO(base64.b64decode(image_data)))
-                st.image(image, use_column_width=True)
-            except:
-                st.image("https://via.placeholder.com/300x200/28a745/ffffff?text=Produce", use_column_width=True)
-        else:
-            st.image("https://via.placeholder.com/300x200/28a745/ffffff?text=Produce", use_column_width=True)
-        
-        st.subheader(title)
-        
-        # Quality badge
-        grade_class = f"grade-{quality_grade.lower()}" if quality_grade != "Not Graded" else "grade-c"
-        st.markdown(f'<span class="{grade_class}">Grade {quality_grade}</span>', unsafe_allow_html=True)
-        
-        st.write(f"**Category:** {category}")
-        st.write(f"**Quantity:** {quantity} {unit}")
-        st.write(f"**Price:** ${base_price:.2f} per {unit}")
-        st.write(f"**Location:** {location}")
-        st.write(f"**Farmer:** {farmer_name}")
-        
-        if description:
-            st.write(f"**Description:** {description}")
-        
-        # Bidding section (only for authenticated buyers)
-        if not guest_mode and st.session_state.authenticated and st.session_state.user_type == 'buyer':
-            st.markdown("---")
-            st.write("**Place Your Bid:**")
-            
-            with st.form(f"bid_form_{id}"):
-                bid_amount = st.number_input(f"Bid Amount (per {unit})", min_value=0.01, step=0.01, key=f"bid_amount_{id}")
-                quantity_requested = st.number_input(f"Quantity ({unit})", min_value=0.1, max_value=quantity, step=0.1, key=f"quantity_{id}")
-                message = st.text_area("Message (Optional)", key=f"message_{id}")
-                
-                if st.form_submit_button("Place Bid", use_container_width=True):
-                    place_bid(id, bid_amount, quantity_requested, message)
-        
-        elif guest_mode:
-            st.info("Login as a buyer to place bids")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-
-def place_bid(produce_id, bid_amount, quantity_requested, message):
-    """Place a bid on produce"""
-    cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            INSERT INTO bids (produce_id, buyer_id, bid_amount, quantity_requested, message)
-            VALUES (?, ?, ?, ?, ?)
-        """, (produce_id, st.session_state.user_id, bid_amount, quantity_requested, message))
-        conn.commit()
-        st.success("🎯 Bid placed successfully!")
-        st.balloons()
-    except Exception as e:
-        st.error(f"Error placing bid: {str(e)}")
-
-def accept_bid(bid_id):
-    """Accept a bid and create transaction"""
-    cursor = conn.cursor()
-    try:
-        # Get bid details
-        cursor.execute("""
-            SELECT b.*, p.title FROM bids b
-            JOIN produce p ON b.produce_id = p.id
-            WHERE b.id = ?
-        """, (bid_id,))
-        bid = cursor.fetchone()
-        
-        if bid:
-            # Update bid status
-            cursor.execute("UPDATE bids SET status = 'accepted' WHERE id = ?", (bid_id,))
-            
-            # Create transaction
-            transaction_id = generate_transaction_id()
-            total_amount = bid[3] * bid[4]  # bid_amount * quantity_requested
-            
-            cursor.execute("""
-                INSERT INTO transactions (transaction_id, bid_id, farmer_id, buyer_id, amount)
-                VALUES (?, ?, ?, ?, ?)
-            """, (transaction_id, bid_id, st.session_state.user_id, bid[2], total_amount))
-            
-            conn.commit()
-            st.success(f"✅ Bid accepted! Transaction ID: {transaction_id}")
-            st.rerun()
-    except Exception as e:
-        st.error(f"Error accepting bid: {str(e)}")
-
-def reject_bid(bid_id):
-    """Reject a bid"""
-    cursor = conn.cursor()
-    try:
-        cursor.execute("UPDATE bids SET status = 'rejected' WHERE id = ?", (bid_id,))
-        conn.commit()
-        st.success("❌ Bid rejected")
-        st.rerun()
-    except Exception as e:
-        st.error(f"Error rejecting bid: {str(e)}")
-
-def my_produce_page():
-    st.header("📦 My Produce Listings")
-    
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT * FROM produce 
-        WHERE farmer_id = ?
-        ORDER BY created_at DESC
-    """, (st.session_state.user_id,))
-    
-    produce_list = cursor.fetchall()
-    
-    if produce_list:
-        for produce in produce_list:
-            col1, col2, col3 = st.columns([2, 2, 1])
-            
-            with col1:
-                st.subheader(produce[2])  # title
-                st.write(f"Category: {produce[4]}")
-                st.write(f"Quantity: {produce[5]} {produce[6]}")
-                st.write(f"Price: ${produce[7]:.2f} per {produce[6]}")
-                
-                grade_class = f"grade-{produce[8].lower()}" if produce[8] != "Not Graded" else "grade-c"
-                st.markdown(f'<span class="{grade_class}">Grade {produce[8]}</span>', unsafe_allow_html=True)
-            
-            with col2:
-                st.write(f"Location: {produce[11]}")
-                st.write(f"Status: {produce[13].title()}")
-                st.write(f"Listed: {produce[14][:10]}")
-                
-                # Get bid count
-                cursor.execute("SELECT COUNT(*) FROM bids WHERE produce_id = ?", (produce[0],))
-                bid_count = cursor.fetchone()[0]
-                st.write(f"Bids received: {bid_count}")
-            
-            with col3:
-                if st.button(f"View Bids", key=f"view_bids_{produce[0]}"):
-                    view_produce_bids(produce[0])
-                
-                if produce[13] == 'active':
-                    if st.button(f"Mark as Sold", key=f"sold_{produce[0]}"):
-                        mark_as_sold(produce[0])
-            
-            st.markdown("---")
-    else:
-        st.info("No produce listed yet. Add your first listing!")
-
-def view_produce_bids(produce_id):
-    """Display bids for a specific produce item"""
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT b.*, u.username, p.title
-        FROM bids b
-        JOIN users u ON b.buyer_id = u.id
-        JOIN produce p ON b.produce_id = p.id
-        WHERE b.produce_id = ?
-        ORDER BY b.created_at DESC
-    """, (produce_id,))
-    
-    bids = cursor.fetchall()
-    
-    if bids:
-        st.subheader(f"Bids for: {bids[0][7]}")
-        
-        for bid in bids:
-            col1, col2, col3 = st.columns([2, 2, 1])
-            
-            with col1:
-                st.write(f"**Buyer:** {bid[6]}")
-                st.write(f"**Quantity:** {bid[4]} units")
-                st.write(f"**Message:** {bid[5] or 'No message'}")
-            
-            with col2:
-                st.write(f"**Bid:** ${bid[3]:.2f} per unit")
-                st.write(f"**Total:** ${bid[3] * bid[4]:.2f}")
-                st.write(f"**Date:** {bid[7][:10]}")
-            
-            with col3:
-                status_class = f"bid-{bid[6]}" if bid[6] in ['success', 'pending', 'rejected'] else 'bid-pending'
-                st.markdown(f'<div class="{status_class}">{bid[6].title()}</div>', unsafe_allow_html=True)
-                
-                if bid[6] == 'pending':
-                    if st.button(f"Accept", key=f"accept_bid_{bid[0]}"):
-                        accept_bid(bid[0])
-                    if st.button(f"Reject", key=f"reject_bid_{bid[0]}"):
-                        reject_bid(bid[0])
-            
-            st.markdown("---")
-    else:
-        st.info("No bids received yet.")
-
-def mark_as_sold(produce_id):
-    """Mark produce as sold"""
-    cursor = conn.cursor()
-    try:
-        cursor.execute("UPDATE produce SET status = 'sold' WHERE id = ?", (produce_id,))
-        conn.commit()
-        st.success("✅ Marked as sold!")
-        st.rerun()
-    except Exception as e:
-        st.error(f"Error updating status: {str(e)}")
-
-def my_bids_page():
-    st.header("💰 My Bids")
-    
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT b.*, p.title, p.unit, u.username as farmer_name
-        FROM bids b
-        JOIN produce p ON b.produce_id = p.id
-        JOIN users u ON p.farmer_id = u.id
-        WHERE b.buyer_id = ?
-        ORDER BY b.created_at DESC
-    """, (st.session_state.user_id,))
-    
-    bids = cursor.fetchall()
-    
-    if bids:
-        for bid in bids:
-            col1, col2, col3 = st.columns([2, 2, 1])
-            
-            with col1:
-                st.write(f"**Product:** {bid[7]}")
-                st.write(f"**Farmer:** {bid[9]}")
-                st.write(f"**Quantity:** {bid[4]} {bid[8]}")
-            
-            with col2:
-                st.write(f"**Bid:** ${bid[3]:.2f} per {bid[8]}")
-                st.write(f"**Total:** ${bid[3] * bid[4]:.2f}")
-                st.write(f"**Date:** {bid[7][:10]}")
-            
-            with col3:
-                status_class = f"bid-{bid[6]}" if bid[6] in ['accepted', 'pending', 'rejected'] else 'bid-pending'
-                st.markdown(f'<div class="{status_class}">{bid[6].title()}</div>', unsafe_allow_html=True)
-                
-                if bid[6] == 'accepted':
-                    # Check if payment is pending
-                    cursor.execute("SELECT payment_status FROM transactions WHERE bid_id = ?", (bid[0],))
-                    transaction = cursor.fetchone()
-                    if transaction and transaction[0] == 'pending':
-                        if st.button(f"Pay Now", key=f"pay_{bid[0]}"):
-                            process_payment(bid[0])
-            
-            st.markdown("---")
-    else:
-        st.info("No bids placed yet. Browse produce to start bidding!")
-
-def process_payment(bid_id):
-    """Process payment for accepted bid"""
-    cursor = conn.cursor()
-    
-    # Get transaction details
-    cursor.execute("""
-        SELECT t.*, p.title FROM transactions t
-        JOIN bids b ON t.bid_id = b.id
-        JOIN produce p ON b.produce_id = p.id
-        WHERE t.bid_id = ?
-    """, (bid_id,))
-    transaction = cursor.fetchone()
-    
-    if transaction:
-        st.subheader(f"💳 Payment for: {transaction[8]}")
-        st.write(f"**Amount:** ${transaction[5]:.2f}")
-        st.write(f"**Transaction ID:** {transaction[1]}")
-        
-        with st.form(f"payment_form_{bid_id}"):
-            payment_method = st.selectbox("Payment Method", [
-                "Credit Card", "Debit Card", "Bank Transfer", 
-                "Digital Wallet", "UPI", "Cash on Delivery"
-            ])
-            
-            if payment_method in ["Credit Card", "Debit Card"]:
-                card_number = st.text_input("Card Number", placeholder="1234 5678 9012 3456")
-                col1, col2 = st.columns(2)
-                with col1:
-                    expiry = st.text_input("Expiry (MM/YY)", placeholder="12/25")
-                with col2:
-                    cvv = st.text_input("CVV", placeholder="123", type="password")
-            
-            elif payment_method == "Bank Transfer":
-                account_number = st.text_input("Account Number")
-                ifsc_code = st.text_input("IFSC Code")
-            
-            elif payment_method == "UPI":
-                upi_id = st.text_input("UPI ID", placeholder="user@bank")
-            
-            submit_payment = st.form_submit_button("💰 Process Payment")
-            
-            if submit_payment:
-                # Simulate payment processing
-                try:
-                    cursor.execute("""
-                        UPDATE transactions 
-                        SET payment_method = ?, payment_status = 'completed'
-                        WHERE bid_id = ?
-                    """, (payment_method, bid_id))
-                    conn.commit()
-                    
-                    st.success("✅ Payment processed successfully!")
-                    st.balloons()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Payment failed: {str(e)}")
-
-def transactions_page():
-    st.header("💳 Transaction History")
-    
-    cursor = conn.cursor()
-    
-    if st.session_state.user_type == 'farmer':
-        cursor.execute("""
-            SELECT t.*, p.title, u.username as buyer_name
-            FROM transactions t
-            JOIN bids b ON t.bid_id = b.id
-            JOIN produce p ON b.produce_id = p.id
-            JOIN users u ON t.buyer_id = u.id
-            WHERE t.farmer_id = ?
-            ORDER BY t.created_at DESC
-        """, (st.session_state.user_id,))
-    else:
-        cursor.execute("""
-            SELECT t.*, p.title, u.username as farmer_name
-            FROM transactions t
-            JOIN bids b ON t.bid_id = b.id
-            JOIN produce p ON b.produce_id = p.id
-            JOIN users u ON t.farmer_id = u.id
-            WHERE t.buyer_id = ?
-            ORDER BY t.created_at DESC
-        """, (st.session_state.user_id,))
-    
-    transactions = cursor.fetchall()
-    
-    if transactions:
-        # Summary metrics
-        total_amount = sum(t[5] for t in transactions if t[7] == 'completed')
-        completed_transactions = len([t for t in transactions if t[7] == 'completed'])
-        pending_transactions = len([t for t in transactions if t[7] == 'pending'])
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Amount", f"${total_amount:.2f}")
-        with col2:
-            st.metric("Completed", completed_transactions)
-        with col3:
-            st.metric("Pending", pending_transactions)
-        
-        st.markdown("---")
-        
-        # Transaction list
-        for transaction in transactions:
-            col1, col2, col3 = st.columns([2, 2, 1])
-            
-            with col1:
-                st.write(f"**Product:** {transaction[8]}")
-                st.write(f"**Transaction ID:** {transaction[1]}")
-                if st.session_state.user_type == 'farmer':
-                    st.write(f"**Buyer:** {transaction[9]}")
-                else:
-                    st.write(f"**Farmer:** {transaction[9]}")
-            
-            with col2:
-                st.write(f"**Amount:** ${transaction[5]:.2f}")
-                st.write(f"**Payment Method:** {transaction[6] or 'Not specified'}")
-                st.write(f"**Date:** {transaction[8][:10]}")
-            
-            with col3:
-                status_color = "🟢" if transaction[7] == 'completed' else "🟡" if transaction[7] == 'pending' else "🔴"
-                st.write(f"{status_color} {transaction[7].title()}")
-            
-            st.markdown("---")
-    else:
+elif menu == "Transactions / Admin":
+    st.header("Transactions and admin controls")
+    st.subheader("All transactions")
+    txs = get_transactions()
+    if not txs:
         st.info("No transactions yet.")
-
-def analytics_page():
-    st.header("📊 Analytics & Market Trends")
-    
-    cursor = conn.cursor()
-    
-    # Market trends data
-    if st.session_state.user_type == 'farmer':
-        # Farmer analytics
-        st.subheader("📈 Your Performance")
-        
-        # Revenue over time
-        cursor.execute("""
-            SELECT DATE(t.created_at) as date, SUM(t.amount) as revenue
-            FROM transactions t
-            WHERE t.farmer_id = ? AND t.payment_status = 'completed'
-            GROUP BY DATE(t.created_at)
-            ORDER BY date DESC
-            LIMIT 30
-        """, (st.session_state.user_id,))
-        
-        revenue_data = cursor.fetchall()
-        
-        if revenue_data:
-            df_revenue = pd.DataFrame(revenue_data, columns=['Date', 'Revenue'])
-            fig = px.line(df_revenue, x='Date', y='Revenue', title='Daily Revenue')
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Category performance
-        cursor.execute("""
-            SELECT p.category, COUNT(*) as listings, AVG(p.base_price) as avg_price
-            FROM produce p
-            WHERE p.farmer_id = ?
-            GROUP BY p.category
-        """, (st.session_state.user_id,))
-        
-        category_data = cursor.fetchall()
-        
-        if category_data:
-            df_category = pd.DataFrame(category_data, columns=['Category', 'Listings', 'Avg Price'])
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                fig = px.pie(df_category, values='Listings', names='Category', title='Listings by Category')
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                fig = px.bar(df_category, x='Category', y='Avg Price', title='Average Price by Category')
-                st.plotly_chart(fig, use_container_width=True)
-    
     else:
-        # Buyer analytics
-        st.subheader("🛒 Your Buying Patterns")
-        
-        # Spending over time
-        cursor.execute("""
-            SELECT DATE(t.created_at) as date, SUM(t.amount) as spending
-            FROM transactions t
-            WHERE t.buyer_id = ? AND t.payment_status = 'completed'
-            GROUP BY DATE(t.created_at)
-            ORDER BY date DESC
-            LIMIT 30
-        """, (st.session_state.user_id,))
-        
-        spending_data = cursor.fetchall()
-        
-        if spending_data:
-            df_spending = pd.DataFrame(spending_data, columns=['Date', 'Spending'])
-            fig = px.line(df_spending, x='Date', y='Spending', title='Daily Spending')
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Category preferences
-        cursor.execute("""
-            SELECT p.category, COUNT(*) as bids, AVG(b.bid_amount) as avg_bid
-            FROM bids b
-            JOIN produce p ON b.produce_id = p.id
-            WHERE b.buyer_id = ?
-            GROUP BY p.category
-        """, (st.session_state.user_id,))
-        
-        preference_data = cursor.fetchall()
-        
-        if preference_data:
-            df_preference = pd.DataFrame(preference_data, columns=['Category', 'Bids', 'Avg Bid'])
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                fig = px.pie(df_preference, values='Bids', names='Category', title='Bids by Category')
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                fig = px.bar(df_preference, x='Category', y='Avg Bid', title='Average Bid by Category')
-                st.plotly_chart(fig, use_container_width=True)
-    
-    # Market overview
-    st.subheader("🌍 Market Overview")
-    
-    # Overall market stats
-    cursor.execute("SELECT COUNT(*) FROM produce WHERE status = 'active'")
-    active_listings = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM bids WHERE status = 'pending'")
-    pending_bids = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM users WHERE user_type = 'farmer'")
-    total_farmers = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM users WHERE user_type = 'buyer'")
-    total_buyers = cursor.fetchone()[0]
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Active Listings", active_listings)
-    with col2:
-        st.metric("Pending Bids", pending_bids)
-    with col3:
-        st.metric("Total Farmers", total_farmers)
-    with col4:
-        st.metric("Total Buyers", total_buyers)
-    
-    # Price trends by category
-    cursor.execute("""
-        SELECT category, AVG(base_price) as avg_price, COUNT(*) as listings
-        FROM produce
-        WHERE status = 'active'
-        GROUP BY category
-        ORDER BY avg_price DESC
-    """)
-    
-    price_trends = cursor.fetchall()
-    
-    if price_trends:
-        df_trends = pd.DataFrame(price_trends, columns=['Category', 'Avg Price', 'Listings'])
-        fig = px.scatter(df_trends, x='Listings', y='Avg Price', size='Listings', 
-                        hover_name='Category', title='Price vs Availability by Category')
-        st.plotly_chart(fig, use_container_width=True)
+        for tx in txs:
+            tid, lid, buyer, amount, status, ts, note = tx
+            st.write(f"Txn {tid} | Listing {lid} | Buyer: {buyer} | ₹{amount:.2f} | Status: {status} | Time: {ts}")
+            if note:
+                st.write(f"> {note}")
+            st.markdown("---")
 
-if __name__ == "__main__":
-    main()
+    st.subheader("All listings (admin view)")
+    listings = get_listings()
+    for row in listings:
+        lid, title, description, quantity, base_price, image_blob, grade, created_at = row
+        cols = st.columns([1,4])
+        with cols[0]:
+            if image_blob:
+                st.image(bytes_to_pil_image(image_blob), use_column_width=True)
+            else:
+                st.write("No image")
+        with cols[1]:
+            st.write(f"ID: {lid} | {title} | Qty: {quantity} | Base: ₹{base_price:.2f} | Grade: {grade}")
+            st.write(description)
+            if st.button(f"Delete listing {lid}", key=f"del_{lid}"):
+                # simple admin delete
+                c = conn.cursor()
+                c.execute('DELETE FROM listings WHERE id=?', (lid,))
+                c.execute('DELETE FROM bids WHERE listing_id=?', (lid,))
+                c.execute('DELETE FROM transactions WHERE listing_id=?', (lid,))
+                conn.commit()
+                st.success(f"Deleted listing {lid} and related bids/transactions.")
+                st.experimental_rerun()
+
+elif menu == "How to integrate real AI & Payments":
+    st.header("Guidance: replace simulated grading & payments with production components")
+    st.markdown("""
+    **Image-based quality grading (replace placeholder):**
+    - Train or fine-tune a model to grade produce (e.g., TensorFlow/Keras or PyTorch). Typical approaches:
+      - Classification model (A/B/C) using labelled images.
+      - Use transfer learning (MobileNet / EfficientNet) for small datasets.
+      - Add metadata (size, color histogram, defects detected) to improve grading.
+    - For inference in this Streamlit app:
+      - Export a lightweight model (ONNX/TFLite) and run inference on the uploaded image.
+      - Or provide an API endpoint (FastAPI) that the app calls to grade images.
+
+    **Digital payments (production-ready):**
+    - Use a payment gateway: Stripe / PayPal / Razorpay (India).
+    - Typical flow:
+      1. Create an order on your backend (FastAPI/Flask/Django), store order details.
+      2. Create a PaymentIntent (Stripe) or order (Razorpay) and pass client token to the frontend.
+      3. Confirm payment on the frontend and verify webhook on the backend.
+      4. Only after webhook confirmation, record transaction as 'Completed' in DB.
+    - Keep secret keys on server side only.
+
+    **Security & Scalability notes**
+    - Move DB to a proper DB server (Postgres / MySQL).
+    - Protect endpoints with authentication (farmers vs buyers vs admin).
+    - Validate uploaded images (size/format), scan for malware, limit file size.
+    - Add rate-limiting and monitoring.
+
+    If you want, I can:
+    - turn the grading placeholder into a small TF/PyTorch demo,
+    - add a FastAPI backend and show an example Stripe integration,
+    - or wire this app to a remote Postgres DB and Dockerize it.
+    """)
