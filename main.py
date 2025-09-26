@@ -8,7 +8,7 @@ from PIL import Image
 import io
 
 # ---------------------- PAGE CONFIG ----------------------
-st.set_page_config(page_title= Welcome to "AgriMarket ", page_icon="🌾", layout="wide")
+st.set_page_config(page_title="Welcome to AgriMarket", page_icon="🌾", layout="wide")
 
 # ---------------------- CUSTOM CSS ----------------------
 st.markdown("""
