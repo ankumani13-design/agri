@@ -142,20 +142,19 @@ if "logged_in" not in st.session_state: st.session_state["logged_in"]=False
 if "username" not in st.session_state: st.session_state["username"]=""
 if "role" not in st.session_state: st.session_state["role"]=""
 if "cart" not in st.session_state: st.session_state["cart"]={}
-
+# ---------------------- PAGES ----------------------
+# HOME
+if menu=="Home":
+    st.title("Welcome to AgriMarket")
+    st.markdown("""
+    **AgriMarket a fresh platform for all your needs
+   
+    """)
 # ---------------------- HORIZONTAL NAVIGATION ----------------------
 tabs = ["Home", "Login", "Register", "Admin Panel", "Marketplace", "Cart", "My Purchases", "Analytics", "Logout"]
 menu = st.radio("Navigate", tabs, index=0, horizontal=True)
 
-# ---------------------- PAGES ----------------------
-# HOME
-if menu=="Home":
-    st.title("Welcome to AgriMarket Pro")
-    st.markdown("""
-    **AgriMarket Pro** is your one-stop platform to buy and sell agricultural products.
-    - Admins can manage products and view analytics.
-    - Users can browse products, add to cart, and purchase.
-    """)
+
 
 # REGISTER
 elif menu=="Register":
