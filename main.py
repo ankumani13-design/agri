@@ -10,9 +10,102 @@ import io
 # ---------------------- PAGE CONFIG ----------------------
 st.set_page_config(page_title="AgriMarket Pro", page_icon="🌾", layout="wide")
 
+# ---------------------- CUSTOM CSS ----------------------
+st.markdown("""
+<style>
+/* Page background */
+[data-testid="stAppViewContainer"] {
+    background-color: #f0f4f8;
+    font-family: 'Segoe UI', sans-serif;
+}
+
+/* Top header */
+.top-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #2E8B57;
+    color: white;
+    padding: 15px 30px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+}
+
+/* App title */
+.app-title {
+    font-size: 28px;
+    font-weight: bold;
+}
+
+/* Top-right user info */
+.top-right {
+    font-size: 16px;
+    font-weight: bold;
+}
+
+/* Centered page title */
+.centered-title {
+    text-align: center;
+    font-size: 36px;
+    font-weight: bold;
+    color: #2E8B57;
+    margin-bottom: 20px;
+}
+
+/* Horizontal navigation */
+div[role="radiogroup"] {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.css-1v3fvcr.e1fqkh3o1 { flex-direction: row; }
+
+[data-baseweb="radio"] label {
+    font-weight: bold;
+    font-size: 16px;
+    padding: 10px 20px;
+    background-color: #e0e0e0;
+    border-radius: 12px;
+    transition: 0.3s;
+}
+
+[data-baseweb="radio"] input:checked + label {
+    background-color: #2E8B57;
+    color: white;
+}
+
+[data-baseweb="radio"] label:hover {
+    background-color: #3cb371;
+    color: white;
+    cursor: pointer;
+}
+
+/* Product card */
+.product-card {
+    background-color: white;
+    padding: 10px;
+    border-radius: 12px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    transition: 0.3s;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.product-card:hover {
+    box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+}
+
+.product-card img {
+    border-radius: 12px;
+    margin-bottom: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ---------------------- DATABASE FUNCTIONS ----------------------
-def get_connection():
-    return sqlite3.connect("agrimarket.db", check_same_thread=False)
+def get_connection(): return sqlite3.connect("agrimarket.db", check_same_thread=False)
 
 def create_tables():
     conn = get_connection()
@@ -40,12 +133,8 @@ def create_tables():
     conn.close()
 
 # ---------------------- HELPER FUNCTIONS ----------------------
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def verify_password(password, hashed):
-    return hash_password(password) == hashed
-
+def hash_password(password): return hashlib.sha256(password.encode()).hexdigest()
+def verify_password(password, hashed): return hash_password(password) == hashed
 def save_user(username, password, role="user"):
     conn = get_connection()
     c = conn.cursor()
@@ -65,8 +154,7 @@ def authenticate_user(username, password):
     c.execute("SELECT password, role FROM users WHERE username=?", (username,))
     result = c.fetchone()
     conn.close()
-    if result and verify_password(password, result[0]):
-        return result[1]
+    if result and verify_password(password, result[0]): return result[1]
     return None
 
 def add_product(name, category, price, quantity, image):
@@ -133,8 +221,7 @@ def get_user_purchases(username):
     conn.close()
     return purchases
 
-def image_to_bytes(image_file):
-    return image_file.read() if image_file else None
+def image_to_bytes(image_file): return image_file.read() if image_file else None
 
 # ---------------------- INITIALIZATION ----------------------
 create_tables()
@@ -142,38 +229,46 @@ if "logged_in" not in st.session_state: st.session_state["logged_in"]=False
 if "username" not in st.session_state: st.session_state["username"]=""
 if "role" not in st.session_state: st.session_state["role"]=""
 if "cart" not in st.session_state: st.session_state["cart"]={}
+
+# ---------------------- TOP HEADER ----------------------
+header_html = f"""
+<div class="top-header">
+    <div class="app-title">🌾 AgriMarket Pro</div>
+    <div class="top-right">
+        {"Welcome, " + st.session_state["username"].title() if st.session_state.get("logged_in") else "Not Logged In"}
+    </div>
+</div>
+"""
+st.markdown(header_html, unsafe_allow_html=True)
+
+# ---------------------- PAGE TITLE ----------------------
+st.markdown('<div class="centered-title">Welcome to AgriMarket Pro 🌾</div>', unsafe_allow_html=True)
+
+# ---------------------- NAVIGATION ----------------------
+tabs = ["Home","Login","Register","Admin Panel","Marketplace","Cart","My Purchases","Analytics","Logout"]
+menu = st.radio("", tabs, index=0, horizontal=True)
+
 # ---------------------- PAGES ----------------------
 # HOME
 if menu=="Home":
-    st.title("Welcome to AgriMarket")
-    st.markdown("""
-    **AgriMarket a fresh platform for all your needs
-   
-    """)
-# ---------------------- HORIZONTAL NAVIGATION ----------------------
-tabs = ["Home", "Login", "Register", "Admin Panel", "Marketplace", "Cart", "My Purchases", "Analytics", "Logout"]
-menu = st.radio("Navigate", tabs, index=0, horizontal=True)
-
-
-
+    st.write("AgriMarket Pro is a modern platform to buy and sell agricultural products efficiently!")
+    
 # REGISTER
 elif menu=="Register":
-    st.title("User Registration")
+    st.header("User Registration")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     role = st.selectbox("Role", ["user", "admin"])
     if st.button("Register"):
         if username and password:
             if save_user(username, password, role):
-                st.success("Registration successful! You can now login.")
+                st.success("Registration successful! Login now.")
             else:
                 st.error("Username already exists.")
-        else:
-            st.warning("Please fill all fields.")
 
 # LOGIN
 elif menu=="Login":
-    st.title("User Login")
+    st.header("Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
@@ -197,7 +292,7 @@ elif menu=="Logout":
 # ADMIN PANEL
 elif menu=="Admin Panel":
     if st.session_state.get("logged_in") and st.session_state.get("role")=="admin":
-        st.title("Admin Panel")
+        st.header("Admin Panel")
         st.subheader("Add Product")
         name = st.text_input("Product Name")
         category = st.text_input("Category")
@@ -222,23 +317,22 @@ elif menu=="Admin Panel":
     else:
         st.warning("Admin access required.")
 
-# MARKETPLACE - CARD GRID
+# MARKETPLACE
 elif menu=="Marketplace":
     if st.session_state.get("logged_in"):
-        st.title("Marketplace")
+        st.header("Marketplace")
         products = get_all_products()
         if products:
             df=pd.DataFrame(products, columns=["ID","Name","Category","Price","Quantity","Image","Added_On"])
             categories=["All"]+df["Category"].unique().tolist()
             selected_category=st.selectbox("Filter by Category", categories)
             filtered_df=df if selected_category=="All" else df[df["Category"]==selected_category]
-
-            # Display products in grid cards
             cols_per_row = 3
             for i in range(0, len(filtered_df), cols_per_row):
                 cols = st.columns(cols_per_row)
                 for idx, row in enumerate(filtered_df.iloc[i:i+cols_per_row].itertuples()):
                     with cols[idx]:
+                        st.markdown('<div class="product-card">', unsafe_allow_html=True)
                         st.image(Image.open(io.BytesIO(row.Image)) if row.Image else None, use_column_width=True)
                         st.markdown(f"**{row.Name}**")
                         st.write(f"Category: {row.Category}")
@@ -251,71 +345,51 @@ elif menu=="Marketplace":
                                 st.experimental_rerun()
                             else:
                                 st.warning("Enter quantity to add.")
+                        st.markdown('</div>', unsafe_allow_html=True)
 
 # CART
 elif menu=="Cart":
-    if st.session_state.get("logged_in"):
-        st.title("Your Cart")
-        if st.session_state["cart"]:
-            cart_items=st.session_state["cart"]
-            products=get_all_products()
-            df=pd.DataFrame(products, columns=["ID","Name","Category","Price","Quantity","Image","Added_On"])
-            total_amount=0
+    st.header("Your Cart")
+    if st.session_state.get("cart"):
+        cart_items = st.session_state["cart"]
+        total_price=0
+        for pid, qty in cart_items.items():
+            product=get_product_by_id(pid)
+            if product:
+                st.write(f"{product[1]} ({qty} units) - ₹{product[3]*qty}")
+                total_price+=product[3]*qty
+        st.write(f"**Total: ₹{total_price}**")
+        if st.button("Checkout"):
             for pid, qty in cart_items.items():
-                product_row=df[df["ID"]==pid].iloc[0]
-                cols = st.columns([1,3,1,1,1])
-                if product_row["Image"]:
-                    cols[0].image(Image.open(io.BytesIO(product_row["Image"])), width=80)
-                else:
-                    cols[0].write("No Image")
-                cols[1].write(f"**{product_row['Name']}**\nCategory: {product_row['Category']}")
-                cols[2].write(f"Price: ₹{product_row['Price']}")
-                cols[3].write(f"Qty: {qty}")
-                cols[4].write(f"Total: ₹{qty*product_row['Price']}")
-                total_amount+=qty*product_row['Price']
-            st.write(f"### Total Amount: ₹{total_amount}")
-            if st.button("Checkout"):
-                success_count=0
-                for pid, qty in cart_items.items():
-                    if add_purchase(st.session_state["username"], pid, qty):
-                        success_count+=1
-                if success_count>0:
-                    st.success(f"Purchase successful for {success_count} products!")
-                    st.session_state["cart"]={}
-                    st.experimental_rerun()
-                else:
-                    st.error("Purchase failed. Check product stock.")
-        else:
-            st.info("Your cart is empty.")
+                add_purchase(st.session_state["username"], pid, qty)
+            st.session_state["cart"]={}
+            st.success("Checkout successful!")
+    else:
+        st.info("Your cart is empty.")
 
 # MY PURCHASES
 elif menu=="My Purchases":
-    if st.session_state.get("logged_in"):
-        st.title("My Purchase History")
-        purchases=get_user_purchases(st.session_state["username"])
-        if purchases:
-            df=pd.DataFrame(purchases, columns=["ID","Product","Category","Quantity","Price","Purchased_On"])
-            df["Total_Price"]=df["Quantity"]*df["Price"]
-            st.dataframe(df)
-        else:
-            st.info("No purchases yet.")
+    st.header("My Purchases")
+    purchases = get_user_purchases(st.session_state["username"])
+    if purchases:
+        for p in purchases:
+            st.write(f"{p[1]} | Qty: {p[3]} | Price per unit: ₹{p[4]} | Purchased on: {p[5]}")
     else:
-        st.warning("Login required.")
+        st.info("No purchases yet.")
 
 # ANALYTICS
 elif menu=="Analytics":
     if st.session_state.get("logged_in") and st.session_state.get("role")=="admin":
-        st.title("Analytics")
-        products=get_all_products()
+        st.header("Analytics")
+        products = get_all_products()
         if products:
             df=pd.DataFrame(products, columns=["ID","Name","Category","Price","Quantity","Image","Added_On"])
-            st.subheader("Product Overview")
-            st.dataframe(df.drop(columns="Image"))
-            st.subheader("Price Distribution by Category")
-            st.plotly_chart(px.box(df,x="Category",y="Price",color="Category"))
-            st.subheader("Quantity vs Price Scatter")
-            st.plotly_chart(px.scatter(df,x="Quantity",y="Price",color="Category",size="Price"))
-        else:
-            st.info("No products available.")
+            fig=px.bar(df, x="Name", y="Quantity", color="Category", title="Product Stock")
+            st.plotly_chart(fig)
+        purchases=pd.read_sql("SELECT p.id, pr.Name, p.quantity, pr.Price, p.purchased_on FROM purchases p JOIN products pr ON p.product_id=pr.id", get_connection())
+        if not purchases.empty:
+            purchases['Total']=purchases['quantity']*purchases['Price']
+            fig2=px.bar(purchases, x="Name", y="Total", title="Sales Revenue")
+            st.plotly_chart(fig2)
     else:
         st.warning("Admin access required.")
