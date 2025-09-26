@@ -244,13 +244,9 @@ st.markdown(header_html, unsafe_allow_html=True)
 # ---------
 
 # ---------------------- NAVIGATION ----------------------
-tabs = ["Home","Login","Register","Admin Panel","Marketplace","Cart","My Purchases","Analytics","Logout"]
+tabs = ["Home","Login","Register","Admin ","Marketplace","Cart","My Purchases","Analytics","Logout"]
 menu = st.radio("", tabs, index=0, horizontal=True)
 
-# ---------------------- PAGES ----------------------
-# HOME
-if menu=="Home":
-    st.write("AgriMarket Pro is a modern platform to buy and sell agricultural products efficiently!")
     
 # REGISTER
 elif menu=="Register":
