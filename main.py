@@ -249,7 +249,7 @@ menu = st.radio("", tabs, index=0, horizontal=True)
 
     
 # REGISTER
-elif menu=="Register":
+if menu=="Register":
     st.header("User Registration")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
